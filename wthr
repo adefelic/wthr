@@ -1,0 +1,302 @@
+#!/usr/bin/env ruby
+
+# wthr.rb
+# a short script to tell me the weather
+# by adam defelice (ad.defelice@gmail.com)
+# last modified: 6/29/2012
+# the info here is taken from weather.gov, thanks noaa
+
+# $ wthr hyannis
+#  - prints the weather in hyannis 
+#    default location is lowell (technically bedford)
+
+require 'open-uri'
+require 'rexml/document'
+require 'optparse'
+
+
+class WthrReport
+  def initialize
+    parse_args
+    if hourly?
+      print_hourly
+    else 
+      print_alert if alert?
+      print_observation
+    end
+  end
+
+  def parse_args
+    OptionParser.new do |opts|
+      opts.banner = 'Usage: wthr [city] [options]'
+
+      @hourly = false
+      opts.on('-f [hours]', 'Prints the hourly forecast for [hours]') do |h|
+        @hourly = true
+        @hours_to_show = h || '8'
+      end
+
+      opts.on('-h', '--help', 'Show this message') do
+        puts opts
+        exit
+      end
+    end.parse!
+
+    ARGV.each do |a|
+      if is_valid_city? a
+        @station = cities[a]['station']
+        @zone    = cities[a]['zone']
+        @lat     = cities[a]['lat']
+        @lon     = cities[a]['lon']
+      end
+    end
+  end
+
+  def alert?
+    alert_str = open("http://alerts.weather.gov/cap/wwaatmget.php?x=#{zone}")
+    @alert = REXML::Document.new(alert_str)
+    alert_elem = @alert.elements['feed/entry/title'].text
+    !alert_elem.include? 'There are no active watches, warnings or advisories'
+  end
+
+  def print_alert
+    puts "  alert:",
+         "    urgency:  #{urgency}",
+         "    severity: #{severity}",
+         "    \"#{description}\""
+  end
+
+  def hourly?
+    @hourly ||= false
+  end
+
+  def hours_to_show
+    @hours_to_show ||= '8'
+  end
+
+  def print_hourly
+    puts "  hour:      #{hours}",
+         "  temp:      #{temps}",
+         "  cloud:     #{clouds}",
+         "  wind(mph): #{winds}",
+         "  humidity:  #{humidities}",
+         "  precip?:   #{precips}"
+#    puts "  thunder:   #{thunders}" if thunder?
+#    puts "  rain:      #{rains}"    if rain?
+  end
+
+  def print_observation
+    puts "  weather:  #{weather}",
+         "  temp:     #{temp}",
+         "  wind:     #{wind}",
+         "  humidity: #{humidity}%",
+         "  dewpoint: #{dewpoint}"
+  end
+
+  def is_valid_city?(c)
+    cities.has_key? c
+  end
+
+  def station
+    @station ||= 'KBED'
+  end
+
+  def zone
+    @zone ||= 'MAZ005'
+  end
+
+  def lon
+    @lon ||= '-71.32210'
+  end
+
+  def lat
+    @lat ||= '42.63870'
+  end
+
+  def alert_data
+    @alert_data ||= get_alert_data
+  end
+
+  def get_alert_data
+    alert_link = @alert.elements['feed/entry/link'].attributes['href']
+    REXML::Document.new open(alert_link)
+  end
+
+  def urgency
+    @urgency ||= alert_data.elements['alert/info/urgency'].text
+  end
+
+  def severity
+    @severity ||= alert_data.elements['alert/info/severity'].text
+  end
+
+  def description
+    description_raw = alert_data.elements['alert/info/description'].text
+    @description ||= description_raw.strip.downcase!.gsub("\n","\n    ")
+  end
+
+  def hourly_data
+    @hourly_data ||= get_hourly_data  
+  end
+
+  def get_hourly_data
+    hourly_str = open("http://forecast.weather.gov/MapClick.php?lat=#{lat}&lon=#{lon}&FcstType=digitalDWML")
+    REXML::Document.new hourly_str
+  end
+
+  def hours
+    @hours ||= format get_hours
+  end
+
+  def get_hours
+    hours = []
+    hourly_data.elements.each('dwml/data/time-layout/start-valid-time') do |hour|
+      hours << hour.text[11..12]
+    end
+    hours
+  end
+
+  def temps
+    @temps ||= format get_temps
+  end
+
+  def get_temps
+    temps = []
+    hourly_data.elements.each('dwml/data/parameters/temperature/value') do |temp|
+      temps << temp.text
+    end
+    temps
+  end
+
+  def clouds
+    @clouds ||= format get_clouds
+  end
+
+  def get_clouds
+    clouds = []
+    hourly_data.elements.each('dwml/data/parameters/cloud-amount/value') do |cloud|
+      clouds << "#{cloud.text}%"
+    end
+    clouds
+  end
+
+  def winds
+    @winds ||= format get_winds
+  end
+
+  def get_winds
+    winds = []
+    hourly_data.elements.each('dwml/data/parameters/wind-speed/value') do |wind|
+      if wind.text.nil?
+        winds << '-'
+      else
+        winds << wind.text
+      end
+    end
+    winds
+  end
+
+  def humidities
+    @humidities ||= format get_humidities
+  end
+
+  def get_humidities
+    hums = []
+    hourly_data.elements.each('dwml/data/parameters/humidity/value') do |hum|
+      hums << "#{hum.text}%"
+    end
+    hums
+  end
+
+  def precips
+    @precips ||= format get_precips
+  end
+
+  def get_precips
+    precips = []
+    hourly_data.elements.each('dwml/data/parameters/probability-of-precipitation/value') do |precip|
+      precips << "#{precip.text}%"
+    end
+    precips
+  end
+
+  def format an_array
+    an_array.map! do |e|
+      case e.size
+      when 1
+        e + '   '
+      when 2
+        e + '  '
+      when 3
+        e + ' '
+      when 4
+        e + ''
+      end
+    end
+    an_array[d_t_offset..d_t_offset + hours_to_show.to_i - 1].join(' ')
+  end
+
+  def d_t_offset
+    @d_t_offset ||= get_d_t_offset
+  end
+
+  def get_d_t_offset
+    time = Time.new
+    time_str = "#{'0' if time.day < 10}#{time.day.to_s}T" +
+               "#{'0' if time.hour < 10}#{time.hour.to_s}"
+    days_hours.index(time_str)? days_hours.index(time_str) : 0
+  end
+
+  def days_hours
+    @days_hours ||= get_days_hours
+  end
+
+  def get_days_hours
+    days_hours = []
+    hourly_data.elements.each('dwml/data/time-layout/start-valid-time') do |dh|
+      days_hours << dh.text[8..12]
+    end
+    days_hours
+  end
+
+  def obs
+    @obs = get_obs
+  end
+
+  def get_obs
+    obs_str = open("http://www.weather.gov/xml/current_obs/#{station}.xml")
+    REXML::Document.new obs_str
+  end
+
+  def weather
+    @weather ||= obs.elements['current_observation/weather'].text
+  end
+
+  def temp
+    @temp ||= obs.elements['current_observation/temperature_string'].text
+  end
+
+  def wind
+    @wind ||= obs.elements['current_observation/wind_string'].text
+  end
+
+  def humidity
+    @humidity ||= obs.elements['current_observation/relative_humidity'].text
+  end
+
+  def dewpoint
+    @dewpoint ||= obs.elements['current_observation/dewpoint_string'].text
+  end
+
+  def cities
+  {
+    'lowell'  => {'station' => 'KBED', 'zone' => 'MAZ005',
+                  'lat' => '42.63870', 'lon'  => '-71.32210'},
+    'hyannis' => {'station' => 'KHYA', 'zone' => 'MAZ022',
+                  'lat' => '41.70430',  'lon'  => '-70.15590'}
+  }
+  end
+end
+
+WthrReport.new
+
