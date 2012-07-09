@@ -1,4 +1,4 @@
 wthr
 ====
 
-a simple ruby script for checking today's weather forecast
+a ruby script for checking today's weather forecast
