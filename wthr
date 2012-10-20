@@ -14,7 +14,6 @@ require 'open-uri'
 require 'rexml/document'
 require 'optparse'
 
-
 class WthrReport
   def initialize
     parse_args
@@ -162,8 +161,12 @@ class WthrReport
 
   def get_temps
     temps = []
-    hourly_data.elements.each('dwml/data/parameters/temperature/value') do |temp|
-      temps << temp.text
+    hourly_data.elements.each('dwml/data/parameters') do |temp_type|
+      temp_type.each_element_with_attribute('type', 'hourly') do |hourly_temps|
+        hourly_temps.each  do |temp|
+          temps << temp.text
+        end
+      end
     end
     temps
   end
