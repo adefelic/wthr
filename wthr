@@ -3,12 +3,11 @@
 # wthr.rb
 # a short script to tell me the weather
 # by adam defelice (ad.defelice@gmail.com)
-# last modified: 6/29/2012
-# the info here is taken from weather.gov, thanks noaa
+# the info here is taken from weather.gov
 
 # $ wthr hyannis
 #  - prints the weather in hyannis 
-#    default location is lowell (technically bedford)
+#    default location is lowell
 
 require 'open-uri'
 require 'rexml/document'
@@ -29,10 +28,9 @@ class WthrReport
     OptionParser.new do |opts|
       opts.banner = 'Usage: wthr [city] [options]'
 
-      @hourly = false
       opts.on('-f [hours]', 'Prints the hourly forecast for [hours]') do |h|
         @hourly = true
-        @hours_to_show = h || '8'
+        @hours_to_show = h
       end
 
       opts.on('-h', '--help', 'Show this message') do
@@ -70,7 +68,7 @@ class WthrReport
   end
 
   def hours_to_show
-    @hours_to_show ||= '8'
+    @hours_to_show ||= '12'
   end
 
   def print_hourly
